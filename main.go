@@ -20,8 +20,12 @@ const (
 	NFT_CONTRACT = "0x5710b77f5461bebf594cc6886A11db239D8cBE23" // NFT 合约地址
 )
 
+// Transfer 事件的 Keccak-256 哈希，不是随机值，所有 ERC-721 合约通用。
 var transferEventSignature = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 
+/*
+* 这是一个以太坊 NFT 转账事件监听器（Indexer），用于实时监听指定 NFT 合约的 Transfer 事件，并将所有权变更记录到本地数据库中。
+ */
 func main() {
 	// 初始化数据库
 	db.InitDB()
