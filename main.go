@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"log"
 	"math/big"
-	"web3-go-indexer/models"
-
+	"net/http"
 	"web3-go-indexer/db"
+	"web3-go-indexer/models"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -21,6 +22,7 @@ const (
 )
 
 // Transfer 事件的 Keccak-256 哈希，不是随机值，所有 ERC-721 合约通用。
+// 只要一个智能合约遵循了标准的ERC-20(代币)或ERC-721(NFT)协议，它的Transfer事件在区块链上产生的一个日志主题(Topic[0])就一定是这个值。
 var transferEventSignature = common.HexToHash("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 
 /*
@@ -30,11 +32,23 @@ func main() {
 	// 初始化数据库
 	db.InitDB()
 
+	// 启动链上事件监听（放到后台协程，不阻塞主线程）
+	go startBlockchainListener()
+
+	// 启动Gin HTTP服务器
+	startGinServer()
+}
+
+// startBlockchainListener监听
+func startBlockchainListener() {
 	// 连接以太坊节点
 	client, err := ethclient.Dial(ALCHEMY_URL)
 	if err != nil {
 		log.Fatal("Failed to connect to Ethereum node:", err)
 	}
+	// 延迟执行，确保善后
+	// 被defer修饰的语句（通常是一个函数调用），不会立刻执行，而是会被压入一个“延迟调用栈”中。
+	// defer的进阶特性：后进先出(LIFO)，即使发生panic也会执行
 	defer client.Close()
 
 	contractAddr := common.HexToAddress(NFT_CONTRACT)
@@ -42,17 +56,23 @@ func main() {
 		Addresses: []common.Address{contractAddr},
 	}
 
+	// 创建一个用于接收链上日志的“专用管道”（Channel）
+	// types.log是go-ethereum库中定义的一种数据结构，专门用来存放从以太坊区块链上抓取到的日志信息
 	logs := make(chan types.Log)
+	// SubscribeFilterLogs创建了一个订阅（Subscription），他会持续占用服务器的内存和带宽来接收链上日志。
+	// context.Background()返回一个空的、non-nil、永不取消的根上下文（Root Context）。
 	sub, err := client.SubscribeFilterLogs(context.Background(), query, logs)
 	if err != nil {
 		log.Fatal("Failed to subscribe to logs:", err)
 	}
+	// 在监听器停止工作前，一定要取消这个订阅
 	defer sub.Unsubscribe()
 
 	log.Println("✅ Listening for Transfer events on contract:", NFT_CONTRACT)
 
-	for {
+	for { // 开启一个死循环，让监听器永远在线
 		select {
+		// <- 叫做“通道操作符”，它的箭头方向代表了数据的流向
 		case err := <-sub.Err():
 			log.Fatal("Subscription error:", err)
 		case vLog := <-logs:
@@ -61,6 +81,28 @@ func main() {
 				handleTransferEvent(vLog)
 			}
 		}
+	}
+}
+
+// startGinServer提供RESTful API
+func startGinServer() {
+	// 使用默认中间件
+	r := gin.Default()
+
+	// 定义API路由组
+	api := r.Group("/api/v1")
+	{
+		// 健康检查接口
+		api.GET("/health", func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"status": "ok", "message": "Web3 Indexer is running"})
+		})
+	}
+
+	log.Println("🚀 Gin Server is running on :8080")
+
+	// 启动服务，监听8080端口
+	if err := r.Run(":8080"); err != nil {
+		log.Fatal("Failed to start Gin server:", err)
 	}
 }
 
