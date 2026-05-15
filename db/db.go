@@ -24,7 +24,7 @@ func InitDB() {
 	}
 
 	// 自动迁移表
-	err = DB.AutoMigrate(&models.NFT{})
+	err = DB.AutoMigrate(&models.NFT{}, &models.LiquidityPool{}, &models.TokenBalance{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}

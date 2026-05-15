@@ -51,7 +51,9 @@ func startBlockchainListener() {
 	// defer的进阶特性：后进先出(LIFO)，即使发生panic也会执行
 	defer client.Close()
 
+	// common.Address
 	contractAddr := common.HexToAddress(NFT_CONTRACT)
+	// 声明并初始化一个FilterQuery
 	query := ethereum.FilterQuery{
 		Addresses: []common.Address{contractAddr},
 	}
@@ -113,8 +115,13 @@ func handleTransferEvent(vLog types.Log) {
 		return
 	}
 
+	// vLog.Topics[1]存放发送方的from地址
+	// vLog.Topics[2]存放接收方的to地址
+	// Topics里的数据本质是32字节的哈希（common.Hash），.Hex()把它转成了人类可读的16进制字符串。
 	from := common.HexToAddress(vLog.Topics[1].Hex()).Hex()
 	to := common.HexToAddress(vLog.Topics[2].Hex()).Hex()
+	// 防御性编程的操作，确保字节数组的长度被补齐到标准的32字节。在以太坊虚拟机中，所有的数据在底层都是按32字节对齐存储的。
+	// TokenID在链上本质上是一个巨大的整数（uint256）。Go语言中普通的int存不下这么大的数。所以必须使用big.Int类型。
 	tokenID := new(big.Int).SetBytes(common.LeftPadBytes(vLog.Topics[3].Bytes(), 32))
 
 	// 打印日志
@@ -137,6 +144,6 @@ func handleTransferEvent(vLog types.Log) {
 	} else if result.RowsAffected > 0 {
 		log.Printf("✅ Saved new NFT ownership: TokenID=%s, Owner=%s", nft.TokenID, nft.Owner)
 	} else {
-		log.Printf("ℹ️ NFT already exists: TokenID=%s", nft.TokenID)
+		log.Printf("⚠️ NFT already exists: TokenID=%s", nft.TokenID)
 	}
 }
